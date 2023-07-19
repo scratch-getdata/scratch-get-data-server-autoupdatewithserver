@@ -44,7 +44,11 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 # Register the signal_handler function to be called only on SIGINT (Ctrl+C)
-signal.signal(signal.SIGINT, signal_handler)
+for sig in signal.Signals:
+    try:
+        signal.signal(sig, signal_handler)
+    except (OSError, RuntimeError):
+        pass
 
 #Required Init
 
@@ -366,6 +370,13 @@ if app == '__main__':
 def settings():
     # Logic for the settings page
     return render_template('settings.html')
+
+@app.route('/redirecttohome')
+def redirecttohome():
+    para1 = request.args.get('para1')
+    para2 = request.args.get('para2')
+    # Logic for the settings page
+    return render_template('gotohome.html', para1='message', para1value=para1, para2='status', para2value=para2)
 
 @app.route('/sidebartest/')
 def homesidebar():
@@ -1090,7 +1101,7 @@ def signup():
         conn.close()
         
         # Redirect to the login page
-        return redirect(url_for('login'))
+        return redirect(url_for('email_verification'))
     
     return render_template('signup.html')
 
@@ -1108,16 +1119,56 @@ def email_verification():
         result = c.fetchone()
         
         if result:
-            user_id = result[0]
-            return render_template('email_verification_success.html', user_id=user_id)
+          user_id = result[0]
+          c.execute('DELETE FROM verifycode WHERE code = ?', (verification_code,))
+          c.execute("INSERT INTO verify (userid, verified) VALUES (?, ?)", (user_id, True))
+          conn.commit()
+          return redirect(url_for('redirecttohome', para1="User Created and Email Verified Complete.", para2="success"))
         else:
-            flash('Invalid verification code')
-            return redirect(url_for('signup'))
+          flash('Invalid verification code')
+          return redirect(url_for('email_verification'))
+
         
         # Close the database connection
         conn.close()
     else:
         return render_template('email_verification.html')
+
+@app.route('/email_resend', methods=['GET', 'POST'])
+def email_resend():
+    if request.method == 'POST':
+        email = request.form['email']
+
+        # Check if the email exists in the users table
+        with sqlite3.connect(DATABASE_NAME) as conn:
+            c = conn.cursor()
+            c.execute("SELECT userid FROM users WHERE email = ?", (email,))
+            result = c.fetchone()
+
+            if not result:
+                flash("Email not found. Please enter a valid email.", "error")
+                return redirect(url_for('email_resend'))
+            else:
+                print(result)
+                userid = result[0]
+
+                # Generate a new verification code
+                new_code = str(random.randint(100000, 999999))
+
+                print(new_code)
+                print(userid)
+
+                # Update the verifycode table with the new code for the specified userid
+                c.execute("UPDATE verifycode SET code = ? WHERE userid = ?", (new_code, userid))
+                conn.commit()
+
+                # Your code here to send the new verification code to the user's email
+
+                flash("A new verification code has been sent to your email.", "success")
+                sendemailtorec(email, new_code)
+                return redirect(url_for('email_verification', userid=userid))
+    
+    return render_template('email_resend.html')
 
 @app.route('/verify_email', methods=['POST'])
 def verify_email():
@@ -1136,7 +1187,7 @@ def verify_email():
         if verification_code == result[0]:
             flash('Email verified successfully')
             # Update the user's email_verified flag in the database
-            c.execute('DELETE FROM verifycode WHERE id = ?', (user_id,))
+            c.execute('DELETE FROM verifycode WHERE userid = ?', (user_id,))
             conn.commit()
         else:
             flash('Invalid verification code')
@@ -1180,6 +1231,9 @@ def dashboard():
                 
             
                 if user is not None:
+                  c.execute("SELECT userid FROM verify WHERE userid = ?", (user_id,))
+                  verifyed = c.fetchone()
+                  if verifyed is not None:
                     c.execute('SELECT key FROM keys WHERE userid = ?', (user_id,))
                     result = c.fetchone()
                     api_key_str = str(result)
@@ -1189,13 +1243,14 @@ def dashboard():
                     norequestsstillout = str(norequestsout)
                     norequests = norequestsstillout.replace("(", "").replace(")", "").replace("'", "").replace(",", "")
                     return render_template('dashboard.html', username=user[0], result=api_key, requests_left=requests_left,requests_sent=norequests)
+                  else:
+                     return redirect(url_for('email_verification'))
                 else:
                     flash('User not found')
                     return redirect(url_for('login'))
                 conn.close()  
             else:
                 flash('Invalid authentication')
-        
             # Close the database connection
             conn.close()
             return redirect(url_for('login'))
@@ -1311,6 +1366,7 @@ def delete_account():
   
     c.execute('DELETE FROM keys WHERE userid = ?', (user_id,))
     conn.commit()
+    c.execute('DELETE FROM verify WHERE userid = ?', (user_id,))
     # Clear session data
     session.clear()
 
