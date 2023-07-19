@@ -2,7 +2,6 @@ from flask import render_template, send_file, request, redirect, session, make_r
 from flask import Flask, jsonify
 from flask import abort
 from flask import url_for
-
 from flask_jwt_extended import create_access_token, jwt_required, decode_token
 from datetime import timedelta, datetime
 from werkzeug.security import generate_password_hash, check_password_hash
