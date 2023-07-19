@@ -1,25 +1,30 @@
-Flask is a minimal Python framework that helps you create a web server. 
+# scratch-getdata-server
 
-Let's take a look at the code we have:
+Note: Some code are hidden.
+-
 
-```python
-from flask import Flask
+This is the most latest version because when the server updates the server sends a request to github to update.
 
-app = Flask(__name__)
+But please stil post issues and things on the main one.
 
-@app.route("/")
-def hello_world():
-    return "<h1>Hello, World!</h1>"
-```
-	
-What did that code do?
+Scratch getdata is a API for fetching scratch data for more explaination see <a href="https://scratch-get-data.kokoiscool.repl.co/why">here</a>
 
-First we `import` the `Flask` class. An instance of this class will be our WSGI application.
+Please credit "kokofixcomputers on scratch" if you use or "@kokofixcomputers on github" he worked very hard on this. 
 
-Next we create an instance of this class. The first argument is the name of the application’s module or package. `__name__` is a convenient shortcut for this that is appropriate for most cases. This is needed so that Flask knows where to look for resources such as templates and static files.
+The home page: <a href="https://scratch-get-data.kokoiscool.repl.co">link</a>
 
-We then use the `route()` decorator to tell Flask what URL should trigger our function. In this case we use `/` routh, which is the default route of any website.
+If your looking for the python module code here is the link: https://github.com/kokofixcomputers/Scratch-getdata
 
-The function returns the message we want to display in the user’s browser. The default content type is HTML, so HTML in the string will be rendered by the browser.
+Contributing:
+------------
 
-To learn more, checkout the [official guide](https://flask.palletsprojects.com/en/2.0.x/quickstart/).
+To contribute to scratch-getdata server you can help create pull requests or you could create issues to issue suggestions, bugs, new features, etc or create a issue to request permissions to manage this repositories
+
+Pull Requests:
+-
+
+If your pull requests has very big changes please create a issue or discuss topic so we can discuss about it here are some rules:
+
+Your pull request must pass the auto test!
+Your pull request must not break anything
+Maybe some more
