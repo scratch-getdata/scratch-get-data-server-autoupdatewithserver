@@ -1323,6 +1323,8 @@ def settingsdashboard():
                     return render_template('settingdashboard.html')
                 else:
                     return redirect(url_for('login'))
+            else:
+                return redirect(url_for('login'))
     else:
           return redirect(url_for('login'))            
     # Add your logic here to handle the settings page
