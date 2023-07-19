@@ -1136,7 +1136,7 @@ def verify_email():
         if verification_code == result[0]:
             flash('Email verified successfully')
             # Update the user's email_verified flag in the database
-            c.execute('UPDATE users SET email_verified = 1 WHERE id = ?', (user_id,))
+            c.execute('DELETE FROM verifycode WHERE id = ?', (user_id,))
             conn.commit()
         else:
             flash('Invalid verification code')
@@ -1309,7 +1309,7 @@ def delete_account():
     c.execute('DELETE FROM Strings WHERE string = ? AND userid = ?', (session['token'], session['user_id']))
     conn.commit()
   
-    c.execute('DELETE FROM keys WHERE userid = ?', (user_id))
+    c.execute('DELETE FROM keys WHERE userid = ?', (user_id,))
     conn.commit()
     # Clear session data
     session.clear()
