@@ -240,6 +240,36 @@ def sendemailtorec(recipient_email, verifycode):
 
     print('Verification code sent to ' + recipient_email)
 
+def send_otp_email(email, otp):
+    # Replace the placeholders with your email credentials and settings
+    smtp_server = os.environ['email_server']
+    smtp_port = 587
+    smtp_username = os.environ['email_username']
+    smtp_password = os.environ['email_password']
+    
+    # Create a multipart email message
+    msg = MIMEMultipart()
+    msg['Subject'] = 'OTP Verification'
+    msg['From'] = 'your-email@example.com'
+    msg['To'] = email
+    
+    # Load the email template from a file
+    with open('otp_email_template.html', 'r') as file:
+        template = file.read()
+
+    # Replace the placeholder with the actual OTP
+    email_body = template.replace('{verifycode}', otp)
+    
+    # Create the email body (HTML format)
+    html_part = MIMEText(email_body, 'html')
+    msg.attach(html_part)
+
+    # Connect to the SMTP server and send the message
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_username, smtp_password)
+        server.send_message(msg)
+
 def create_database():
     # Check if the database file exists
     if not os.path.exists(DATABASE_NAME):
