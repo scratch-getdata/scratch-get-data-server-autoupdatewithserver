@@ -7,6 +7,7 @@ from datetime import timedelta, datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_autoindex import AutoIndex
 import json
+from base64 import b64encode
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -55,6 +56,9 @@ for sig in signal.Signals:
 #Set timezone
 vancouver_tz = pytz.timezone('America/Vancouver')
 now = datetime.now(vancouver_tz)
+
+def base64(string):
+    return b64encode(string.encode("utf-8")).decode()
 
 
 # Reqire Generate
@@ -269,6 +273,7 @@ def send_otp_email(email, otp):
         server.starttls()
         server.login(smtp_username, smtp_password)
         server.send_message(msg)
+    print("OTP Code sent to" + email)
 
 def create_database():
     # Check if the database file exists
@@ -400,6 +405,11 @@ if app == '__main__':
 def settings():
     # Logic for the settings page
     return render_template('settings.html')
+
+@app.route('/otp/email/')
+def otp_email():
+    # Logic for the settings page
+    return render_template('otp_email.html')
 
 @app.route('/redirecttohome')
 def redirecttohome():
@@ -1069,11 +1079,48 @@ def login():
         
     return render_template('login.html')
 
+@app.route("/scratchauth")
+def scratchauth():
+    if "scratchusername" in session:
+        return f"You are {session['scratchusername']}"
+    else:
+        return redirect(f"https://auth.itinerary.eu.org/auth/?redirect={ base64('https://scratch-get-data.kokoiscool.repl.co/scratchauth/verify') }&name=Scratch-GetData")
+
+@app.route("/scratchauth/verify")
+def handle():
+    privateCode = request.args.get("privateCode")
+    
+    if privateCode == None:
+        abort(400)
+
+    resp = requests.get(f"https://auth.itinerary.eu.org/api/auth/verifyToken?privateCode={privateCode}").json()
+    conn = sqlite3.connect(DATABASE_NAME)
+    c = conn.cursor()
+
+    if resp["redirect"] == "https://scratch-get-data.kokoiscool.repl.co/scratchauth/verify":
+        if resp["valid"]:
+            session["scratchusername"] = resp["username"]
+            c.execute('SELECT * FROM specialAccounts WHERE scratchusername = ?', (resp["username"],))
+            result = c.fetchone()
+            if result == None:
+                userid = random.randrange(100000, 1000000)
+                key = secrets.token_hex(16)
+                c.execute('INSERT INTO specialAccounts (userid, signedin, scratchusername, key) VALUES (?, ?, ?, ?)', (userid, 'scratchauth', resp["username"], key))
+                conn.commit()
+                return redirect("/dashboard")
+            else:
+                print(resp["username"])
+                return redirect("/dashboard")
+        else:
+            return f"Authentication failed - please try again later."
+    else:
+        return "Invalid Redirect", 400
+
 @app.route('/serverstats')
 def server_status():
     status_message = "All systems are operational"
     last_updated = "July 18, 2023, 8:23 PM"
-    description = "This is the status page for the scratch-getdar"
+    description = "This is the status page for the scratch-getdata"
     server_version = "1.0.0"
     server_status = "Online"
     now = datetime.utcnow()
@@ -1114,14 +1161,24 @@ def signup():
             # Insert the user ID and verification code into the "verifycode" table
             c.execute('INSERT INTO verifycode (userid, code) VALUES (?, ?)', (user_id, verification_code))
             conn.commit()
+
             
             # Generate a random key for the user
             key = secrets.token_hex(16)
-            
-            # Insert the key into the database
-            c.execute('INSERT INTO keys (userid, key) VALUES (?, ?)', (user_id, key))
-            c.execute('INSERT INTO requests (userid, count) VALUES (?, ?)', (user_id, '0'))
-            conn.commit()
+          
+            c.execute('SELECT * FROM keys WHERE key = ?', (key,))
+            result = c.fetchone()
+            if result:
+              c.execute('SELECT * FROM keys WHERE key = ?', (key,))
+              result = c.fetchone()
+              c.execute('INSERT INTO keys (userid, key) VALUES (?, ?)', (user_id, key))
+              c.execute('INSERT INTO requests (userid, count) VALUES (?, ?)', (user_id, '0'))
+              conn.commit()
+            else:
+              c.execute('INSERT INTO keys (userid, key) VALUES (?, ?)', (user_id, key))
+              c.execute('INSERT INTO requests (userid, count) VALUES (?, ?)', (user_id, '0'))
+              conn.commit()
+        
             
             
             flash('User created successfully')
@@ -1230,40 +1287,35 @@ def verify_email():
 
 @app.route('/dashboard')
 def dashboard():
-    try:
-        if 'user_id' in session and 'username' in session and 'token' in session:
-            user_id = session['user_id']
-            username = session['username']
-            auth_string = session['token']
+    if 'user_id' in session and 'username' in session and 'token' in session:
+        user_id = session['user_id']
+        username = session['username']
+        auth_string = session['token']
+    
+        # Connect to the users.db database
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
+    
+        # Check if the auth_string matches a string in the strings table
+        c.execute('SELECT userid FROM strings WHERE string = ?', (auth_string,))
+        result = c.fetchone()
+    
+        if result and str(result[0]) == str(user_id):
+            # Continue with the dashboard logic
         
-            # Connect to the users.db database
-            conn = sqlite3.connect('users.db')
-            c = conn.cursor()
+            # Get the user's data from the users table
+            c.execute('SELECT username FROM users WHERE userid = ?', (user_id,))
+            user = c.fetchone()
         
-            # Check if the auth_string matches a string in the strings table
-            c.execute('SELECT userid FROM strings WHERE string = ?', (auth_string,))
-            result = c.fetchone()
+            now = datetime.utcnow()
+            now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+            c.execute('UPDATE strings SET created = ? WHERE userid = ?', (now_str, user_id))
+            conn.commit()
         
-            if result and str(result[0]) == str(user_id):
-                # Continue with the dashboard logic
-            
-                # Get the user's data from the users table
-                c.execute('SELECT username FROM users WHERE userid = ?', (user_id,))
-                user = c.fetchone()
-            
-                now = datetime.utcnow()
-                
-                now_str = now.strftime('%Y-%m-%d %H:%M:%S')
-                
-                c.execute('UPDATE strings SET created = ? WHERE userid = ?', (now_str, user_id))
-
-                conn.commit()
-                
-            
-                if user is not None:
-                  c.execute("SELECT userid FROM verify WHERE userid = ?", (user_id,))
-                  verifyed = c.fetchone()
-                  if verifyed is not None:
+            if user is not None:
+                c.execute("SELECT userid FROM verify WHERE userid = ?", (user_id,))
+                verifyed = c.fetchone()
+                if verifyed is not None:
                     c.execute('SELECT key FROM keys WHERE userid = ?', (user_id,))
                     result = c.fetchone()
                     api_key_str = str(result)
@@ -1272,23 +1324,58 @@ def dashboard():
                     norequestsout = c.fetchone()
                     norequestsstillout = str(norequestsout)
                     norequests = norequestsstillout.replace("(", "").replace(")", "").replace("'", "").replace(",", "")
-                    return render_template('dashboard.html', username=user[0], result=api_key, requests_left=requests_left,requests_sent=norequests)
-                  else:
-                     return redirect(url_for('email_verification'))
+                    conn.close()
+                    return render_template('dashboard.html', username=user[0], result=api_key, requests_left=requests_left, requests_sent=norequests)
                 else:
-                    flash('User not found')
-                    return redirect(url_for('login'))
-                conn.close()  
+                    conn.close()
+                    return redirect(url_for('email_verification'))
             else:
-                flash('Invalid authentication')
-            # Close the database connection
-            conn.close()
-            return redirect(url_for('login'))
+                conn.close()
+                flash('User not found')
+                return redirect(url_for('login'))
+            
         else:
-          return redirect(url_for('login'))
-    except Exception as e:
-        print(e)
+            conn.close()
+            flash('Invalid authentication')
+            return redirect(url_for('login'))
+            
+    elif 'scratchusername' in session:
+        print('scratchusername found in session')
+        print(session['scratchusername'])
+        print("Finding userid")
+    # Connect to the users.db database
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
+        c.execute("SELECT userid FROM specialAccounts WHERE scratchusername = ?", (session['scratchusername'],))
+        userid = c.fetchone()
+        print("Userid: " + str(userid))
+        conn.close()
+
+        if userid is None:
+            print('result is none')
+            key = secrets.token_hex(16)
+            userid = generate_random_userid()
+        
+            # Connect to the users.db database
+            conn = sqlite3.connect('users.db')
+            c = conn.cursor()
+
+        # Insert the new record into the specialAccounts table
+            c.execute("INSERT INTO specialAccounts (key, userid, signedin) VALUES (?, ?, ?)", (key, userid, 'scratchauth'))
+
+
+            conn.commit()
+            conn.close()
+
+        else:
+            norequests = ""  # Set a default value here or fetch it from the database if applicable
+            print('result is not none')
+            return render_template('dashboard.html', username=session['scratchusername'], result="(This api feature is currently being worked on for scratch auth users.)", requests_left=requests_left, requests_sent=norequests)
+
+    else:
+        print('no session found redirecting to login')
         return redirect(url_for('login'))
+
   
 @app.route('/admin')
 def admin():
@@ -1355,18 +1442,44 @@ def settingsdashboard():
                     return redirect(url_for('login'))
             else:
                 return redirect(url_for('login'))
+    elif 'scratchusername' in session:
+        print('scratchusername found in session')
+        print(session['scratchusername'])
+        print("Finding userid")
+    # Connect to the users.db database
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
+        c.execute("SELECT userid FROM specialAccounts WHERE scratchusername = ?", (session['scratchusername'],))
+        userid = c.fetchone()
+        print("Userid: " + str(userid))
+        conn.close()
+
+        if userid is None:
+            print('result is none')
+            return redirect(url_for('login'))
+        else:
+            norequests = ""  # Set a default value here or fetch it from the database if applicable
+            print('result is not none')
+            return render_template('settingdashboard.html')
+      
     else:
-          return redirect(url_for('login'))            
+      return redirect(url_for('login'))            
     # Add your logic here to handle the settings page
 
 @app.route('/logout')
 def logout():
+  if 'user_id' in session and 'username' in session and 'token' in session:
     # Remove the token and user ID from the Strings table
     conn = sqlite3.connect(DATABASE_NAME)
     c = conn.cursor()
     c.execute('DELETE FROM Strings WHERE string = ? AND userid = ?', (session['token'], session['user_id']))
     conn.commit()
     conn.close()
+  elif 'scratchusername' in session:
+    session.clear()
+    return redirect(url_for('home'))
+  else:
+    return redirect(url_for('home', message="Error: Cannot logout, No valid session found", status="danger"))
 
     # Clear the session data and redirect to the home page
     session.clear()
