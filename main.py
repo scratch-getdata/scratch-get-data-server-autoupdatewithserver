@@ -346,11 +346,18 @@ def check_key():
 
     # If the key is not found, bypass the key check
     if result is None:
-        return render_template('keynotfound.html')
+        c.execute('SELECT * FROM specialAccounts WHERE key = ?', (random_key,))
+        result = c.fetchone()
+        if result is None:
+          return render_template('keynotfound.html')
+        
 
     # Get the user ID from the session
     c.execute('SELECT userid FROM keys WHERE key = ?', (random_key,))
     user_id = c.fetchone()[0]  # Extract the value from the tuple
+    if user_id is None:
+      c.execute('SELECT userid FROM specialAccounts WHERE key = ?', (random_key,))
+      user_id = c.fetchone()[0]
 
 # Update the requests column for the user
     c.execute('UPDATE requests SET count = (SELECT COALESCE(count, 0) + 1 FROM requests WHERE userid = ?) WHERE userid = ?', (user_id, user_id))
@@ -1105,7 +1112,8 @@ def handle():
             if result == None:
                 userid = random.randrange(100000, 1000000)
                 key = secrets.token_hex(16)
-                c.execute('INSERT INTO specialAccounts (userid, signedin, scratchusername, key) VALUES (?, ?, ?, ?)', (userid, 'scratchauth', resp["username"], key))
+                c.execute('INSERT INTO specialAccounts (userid, signedin, scratchusername, key, request) VALUES (?, ?, ?, ?, ?)', (userid, 'scratchauth', resp["username"], key, "0"))
+
                 conn.commit()
                 return redirect("/dashboard")
             else:
@@ -1352,25 +1360,18 @@ def dashboard():
         conn.close()
 
         if userid is None:
-            print('result is none')
-            key = secrets.token_hex(16)
-            userid = generate_random_userid()
-        
-            # Connect to the users.db database
-            conn = sqlite3.connect('users.db')
-            c = conn.cursor()
-
-        # Insert the new record into the specialAccounts table
-            c.execute("INSERT INTO specialAccounts (key, userid, signedin) VALUES (?, ?, ?)", (key, userid, 'scratchauth'))
-
-
-            conn.commit()
-            conn.close()
+            flash('error sign in with scratch user not found')
 
         else:
             norequests = ""  # Set a default value here or fetch it from the database if applicable
             print('result is not none')
-            return render_template('dashboard.html', username=session['scratchusername'], result="(This api feature is currently being worked on for scratch auth users.)", requests_left=requests_left, requests_sent=norequests)
+            conn = sqlite3.connect('users.db')
+            c = conn.cursor()
+            c.execute("SELECT key FROM specialAccounts WHERE scratchusername = ?", (session['scratchusername'],))
+            api_key = c.fetchone()
+            api_key_str = str(api_key)
+            api_key = api_key_str.replace("(", "").replace(")", "").replace("'", "").replace(",", "")
+            return render_template('dashboard.html', username=session['scratchusername'], result=api_key, requests_left=requests_left, requests_sent=norequests)
 
     else:
         print('no session found redirecting to login')
