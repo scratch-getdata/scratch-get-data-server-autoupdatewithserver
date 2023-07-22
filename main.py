@@ -1027,7 +1027,7 @@ def auth_only():
         abort(401)
     return "Authenticated successfully"
 
-#Admin page
+#Accounts and login
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -1527,7 +1527,7 @@ def delete_account():
 
     return 'Account deleted successfully'
 
-#Websocket
+#Websocket to get real time data from the server.
 
 @sock.route('/websocket')
 def websocket_handler(ws):
@@ -1543,7 +1543,7 @@ def websocket_handler(ws):
             print("WebSocket connection closed.")
             break
 
-#Other things and error handlers
+#Other things and error handlers.
 
 @app.route("/keep-alive/")
 def keep_alive():
