@@ -2,6 +2,7 @@ from flask import render_template, send_file, request, redirect, session, make_r
 from flask import Flask, jsonify
 from flask import abort
 from flask import url_for
+from flask_sock import Sock
 from flask_jwt_extended import create_access_token, jwt_required, decode_token
 from datetime import timedelta, datetime
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -17,6 +18,7 @@ import os
 import re
 import time
 import signal
+from threading import Thread
 import sys
 import string
 import random
@@ -73,9 +75,10 @@ def generate_random_string(length):
 
 # init
 
-app = Flask('app')
 app = Flask(__name__)
+sock = Sock(app)
 app.config['JWT_SECRET_KEY'] = '1QGz0JZvqsNJg0Mp2o'  # Change this!
+app.config['SOCK_SERVER_OPTIONS'] = {'ping_interval': 25}
 app.config['JWT_TOKEN_LOCATION'] = ['cookies']
 app.config['JWT_ACCESS_COOKIE_NAME'] = 'Token'
 app.config['JWT_ACCESS_CSRF_HEADER_NAME'] = 'CSRF-TOKEN'
@@ -83,6 +86,7 @@ app.config['JWT_ACCESS_CSRF_FIELD_NAME'] = 'csrf_token'
 app.config['JWT_COOKIE_SECURE'] = True
 app.config['JWT_COOKIE_CSRF_PROTECT'] = True
 app.config['JWT_CSRF_IN_COOKIES'] = True
+app.config['SECRET_KEY'] = 'dumb_secret_key_haha!'
 app.config['JWT_COOKIE_SAMESITE'] = 'Strict'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.abspath('users.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -354,14 +358,21 @@ def check_key():
 
     # Get the user ID from the session
     c.execute('SELECT userid FROM keys WHERE key = ?', (random_key,))
-    user_id = c.fetchone()[0]  # Extract the value from the tuple
-    if user_id is None:
+    try:
+      user_id = c.fetchone()[0]  # Extract the value from the tuple
+      specialAccount = 'false'
+    except TypeError:
+      specialAccount = 'true'
       c.execute('SELECT userid FROM specialAccounts WHERE key = ?', (random_key,))
       user_id = c.fetchone()[0]
 
 # Update the requests column for the user
-    c.execute('UPDATE requests SET count = (SELECT COALESCE(count, 0) + 1 FROM requests WHERE userid = ?) WHERE userid = ?', (user_id, user_id))
-    conn.commit()
+    if specialAccount == 'true':
+      c.execute('UPDATE specialAccounts SET request = (SELECT COALESCE(request, 0) + 1 FROM specialAccounts WHERE userid = ?) WHERE userid = ?', (user_id, user_id))
+      conn.commit()
+    else:
+      c.execute('UPDATE requests SET count = (SELECT COALESCE(count, 0) + 1 FROM requests WHERE userid = ?) WHERE userid = ?', (user_id, user_id))
+      conn.commit()
 
 # Require Define Functions:
 
@@ -404,9 +415,7 @@ def home():
        return render_template('index.html', message=message)
      else:
        return render_template('index.html', message=message, status=status)
-   
-if app == '__main__':
-   app.run()
+  
 
 @app.route('/settings')
 def settings():
@@ -1518,6 +1527,22 @@ def delete_account():
 
     return 'Account deleted successfully'
 
+#Websocket
+
+@sock.route('/websocket')
+def websocket_handler(ws):
+    while True:
+        try:
+            message = ws.receive()
+            if message is None:
+                print("breaking websocket because closed")
+                break
+            ws.send(f'Received message: {message}')
+            print(f"message: {message} received")
+        except:
+            print("WebSocket connection closed.")
+            break
+
 #Other things and error handlers
 
 @app.route("/keep-alive/")
@@ -1552,9 +1577,10 @@ def page_not_found(e):
 def page_not_found(e):
     return render_template('405.html'), 400
 
-
-app.run(host='0.0.0.0', port=8080)
-
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=True, use_reloader=False)
+    
+  
 print(Fore.GREEN + "Flask Ready." + Fore.RESET)
 
 print(Fore.GREEN + "Flask Webserver started" + Fore.RESET)
