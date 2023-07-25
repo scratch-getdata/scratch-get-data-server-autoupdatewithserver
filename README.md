@@ -1,6 +1,6 @@
 # scratch-getdata-server
 
-Note: Some code are hidden.
+Note: autoupdate channel code has been moved to the main repository but with diffrent branches
 -
 
 This is the most latest version because when the server updates the server sends a request to github to update.
