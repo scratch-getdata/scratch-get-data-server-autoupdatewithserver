@@ -3,6 +3,7 @@ from flask import Flask, jsonify
 from flask import abort
 from flask import url_for
 from flask_sock import Sock
+from flask_socketio import SocketIO, emit, send
 from flask_jwt_extended import create_access_token, jwt_required, decode_token
 from datetime import timedelta, datetime
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -94,6 +95,8 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 jwt = JWTManager(app)
 
 db = SQLAlchemy(app)
+
+socketio = SocketIO(app, cors_allowed_origins='*')
 
 flask_session_encryption = generate_random_string(15)
 app.secret_key = flask_session_encryption
@@ -1027,13 +1030,14 @@ def auth_only():
         abort(401)
     return "Authenticated successfully"
 
-#Admin page
+#Accounts
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        afterlogin = request.args.get('afterlogin', '').lstrip('/')
         if username != 'admin':
         
         # Connect to the users.db database
@@ -1061,8 +1065,10 @@ def login():
                 c.execute('INSERT INTO strings (userid, string, created) VALUES (?, ?, ?)', (session['user_id'], session['token'], now_str))
                 conn.commit()
                 print('userid: ' + str(session['user_id']) + ' string: ' + session['token'])
-            
-                return redirect(url_for('dashboard'))
+                if afterlogin is not None:
+                  return redirect(url_for(afterlogin))
+                else:
+                  return redirect(url_for('dashboard'))
             else:
                 flash('Invalid username or password')
                 print('Invalid username or password')
@@ -1419,6 +1425,47 @@ def admin():
         # Redirect the user to the login page with the afterlogin URL parameter
         return redirect(url_for('login', afterlogin='/admin'))
 
+@app.route('/change_password', methods=['GET', 'POST'])
+def change_password():
+    if request.method == 'POST':
+        # Handle the form submission and update the password
+        current_password = request.form['currentPassword']
+        new_password = request.form['newPassword']
+        confirm_password = request.form['confirmNewPassword']
+        
+        # Perform password validation and update logic here
+
+        if new_password == confirm_password:
+            password_hash = generate_password_hash(current_password)
+            conn = sqlite3.connect('users.db')
+            c = conn.cursor()
+
+            c.execute('SELECT userid FROM users WHERE password_hash = ?', (password_hash,))
+            result = c.fetchone()
+            if result is not None:
+              password_hash = generate_password_hash(new_password)
+              
+              c.execute("UPDATE users SET password_hash = ? WHERE userid = ?", (password_hash, result))
+              conn.commit()
+
+              session.clear()
+
+              conn.close()
+
+              return redirect(url_for('login'))
+              
+            else:
+              return redirect(url_for('change_password'))
+              flash('Incorrect Current Password')
+            
+        else:
+           return redirect(url_for('home', status='danger', message="Passwords do not match"))
+        # Redirect to a success page or display an error message
+        return redirect(url_for('success'))
+    
+    # Render the change password form
+    return render_template('change_password.html')
+
 @app.route('/dashboard/settings')
 def settingsdashboard():
     if 'user_id' in session and 'username' in session and 'token' in session:
@@ -1449,7 +1496,7 @@ def settingsdashboard():
                 if user is not None:
                     return render_template('settingdashboard.html')
                 else:
-                    return redirect(url_for('login'))
+                    return redirect(url_for('login', afterlogin='/dashboard/settings'))
             else:
                 return redirect(url_for('login'))
     elif 'scratchusername' in session:
@@ -1529,19 +1576,70 @@ def delete_account():
 
 #Websocket
 
+@socketio.on('customname', namespace='/socket.io/websocket')
+def handle_message(message):
+  print('received message: ' + message)
+  send("Recived: " + message)
+
+@socketio.on('connect', namespace='/socket.io/websocket')
+def test_connect():
+  emit('my response', {'data': 'Connected'})
+
+@socketio.on('json', namespace='/socket.io/websocket')
+def handle_json(json):
+  print('received json: ' + str(json))
+  send("Recived: " + message, json=True)
+
+@socketio.on('message', namespace='/socket.io/websocket')
+def handle_message(message):
+  print('received message: ' + message)
+  send("Recived: " + message)
+
+
 @sock.route('/websocket')
 def websocket_handler(ws):
-    while True:
-        try:
+    try:
+        while True:
             message = ws.receive()
-            if message is None:
+            if message is None or message == '!break-connection!':
                 print("breaking websocket because closed")
                 break
             ws.send(f'Received message: {message}')
-            print(f"message: {message} received")
-        except:
-            print("WebSocket connection closed.")
-            break
+            try:
+                message_data = json.loads(message)
+                if "message" in message_data and "apikey" in message_data:
+                    if message_data["message"] == "getrequests":
+                        api_key = message_data["apikey"]
+                        print(f"Received 'getrequests' message with apikey: {api_key}")
+                        conn = sqlite3.connect('users.db')
+                        c = conn.cursor()
+                        try:
+                            c.execute("SELECT request FROM specialAccounts WHERE key = ?", (api_key,))
+                            request = c.fetchone()
+                            if request is None:
+                              c.execute("SELECT userid FROM keys WHERE key = ?", (api_key,))
+                              userid = c.fetchone()
+                              print(userid)
+                              c.execute("SELECT count FROM requests WHERE userid = ?", (userid,))
+                              request = c.fetchone()
+                              print(request)
+                              ws.send(request)
+                            else:
+                              print(request)
+                              ws.send(request)
+                        except:
+                            c.execute("SELECT userid FROM keys WHERE key = ?", (api_key,))
+                            userid = c.fetchone()
+                            print(userid)
+                            c.execute("SELECT count FROM requests WHERE userid = ?", (userid,))
+                            request = c.fetchone()
+                            print(request)
+                            ws.send(request)
+                            
+            except json.JSONDecodeError:
+                pass
+    except:
+        pass
 
 #Other things and error handlers
 
@@ -1555,7 +1653,7 @@ def set_server_header():
   
 @app.route('/favicon.ico')
 def favicon():
-    return url_for('static', filename='favicon.png')
+    return send_file('static/favicon.png', mimetype='image/png')
 
 @app.errorhandler(404)
 def page_not_found(e):
@@ -1578,7 +1676,8 @@ def page_not_found(e):
     return render_template('405.html'), 400
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True, use_reloader=False)
+    #app.run(host='0.0.0.0', port=8080, debug=True, use_reloader=False)
+    socketio.run(app, host='0.0.0.0', port=8080)
     
   
 print(Fore.GREEN + "Flask Ready." + Fore.RESET)
