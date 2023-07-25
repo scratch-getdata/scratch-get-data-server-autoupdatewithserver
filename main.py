@@ -54,7 +54,43 @@ for sig in signal.Signals:
     except (OSError, RuntimeError):
         pass
 
-#Required Init
+#Required Settings
+
+server_version = "1.0.1"
+server_channel = "autoupdate"
+
+# Check for updates
+
+def check_for_updates():
+    try:
+        params = {
+            "update": 'scratch-getdata',
+            "channel": server_channel
+        }
+      
+        response = requests.get("https://kokofixcomputers-update-server.kokoiscool.repl.co/check/update", params=params)
+        if response.status_code == 200:
+            update_data = json.loads(response.text)
+            if update_data.get("version"):
+              if update_data.get("version") == server_version:
+                update_status = "UpToDate"
+                latest_version = ""
+                return "uptodate"
+              else:
+                  update_status = "NotUpToDate"
+                  latest_version = update_data.get("version")
+                  return "not-uptodata"
+            else:
+              return "error"
+                
+            return update_data.get("version", "No update information available.")
+        else:
+            return "Unable to fetch update information from the server."
+
+    except Exception as e:
+        return f"An error has occurred while trying to check for updates: {e}"
+
+print(check_for_updates())
 
 #Set timezone
 vancouver_tz = pytz.timezone('America/Vancouver')
@@ -371,7 +407,7 @@ def check_key():
 
 # Update the requests column for the user
     if specialAccount == 'true':
-      c.execute('UPDATE specialAccounts SET request = (SELECT COALESCE(request, 0) + 1 FROM specialAccounts WHERE userid = ?) WHERE userid = ?', (user_id, user_id))
+      c.execute('UPDATE specialAccounts SET request = COALESCE(request, 0) + 1 WHERE userid = ?', (user_id,))
       conn.commit()
     else:
       c.execute('UPDATE requests SET count = (SELECT COALESCE(count, 0) + 1 FROM requests WHERE userid = ?) WHERE userid = ?', (user_id, user_id))
@@ -1069,7 +1105,11 @@ def login():
                 conn.commit()
                 print('userid: ' + str(session['user_id']) + ' string: ' + session['token'])
                 if afterlogin is not None:
-                  return redirect(url_for(afterlogin))
+                  if afterlogin != '':
+                    print("Afterlogin: " + afterlogin)
+                    return redirect(url_for(afterlogin))
+                  else:
+                    return redirect(url_for('dashboard'))
                 else:
                   return redirect(url_for('dashboard'))
             else:
@@ -1147,7 +1187,6 @@ def server_status():
     status_message = "All systems are operational"
     last_updated = "July 18, 2023, 8:23 PM"
     description = "This is the status page for the scratch-getdata"
-    server_version = "1.0.0"
     server_status = "Online"
     now = datetime.utcnow()
     now_str = now.strftime('%Y-%m-%d %H:%M:%S')
@@ -1381,10 +1420,13 @@ def dashboard():
             flash('error sign in with scratch user not found')
 
         else:
-            norequests = ""  # Set a default value here or fetch it from the database if applicable
-            print('result is not none')
             conn = sqlite3.connect('users.db')
             c = conn.cursor()
+            c.execute("SELECT request FROM specialAccounts WHERE scratchusername = ?", (session['scratchusername'],))
+            norequests = c.fetchone()
+            norequests_str = str(norequests)
+            norequests = norequests_str.replace("(", "").replace(")", "").replace("'", "").replace(",", "")
+            print('result is not none')
             c.execute("SELECT key FROM specialAccounts WHERE scratchusername = ?", (session['scratchusername'],))
             api_key = c.fetchone()
             api_key_str = str(api_key)
