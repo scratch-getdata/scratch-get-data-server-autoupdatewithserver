@@ -1015,7 +1015,8 @@ def restart():
 def internel_error():
   abort(401)
 
-#Testing use
+#Testing use only
+
 
 @app.route("/get/ip/", methods=["GET", "POST"])
 def get_my_ip():
@@ -1031,6 +1032,8 @@ def auth_only():
     return "Authenticated successfully"
 
 #Accounts
+
+#Accounts and login
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -1574,7 +1577,7 @@ def delete_account():
 
     return 'Account deleted successfully'
 
-#Websocket
+#Websocket to get real time data from the server.
 
 @socketio.on('customname', namespace='/socket.io/websocket')
 def handle_message(message):
@@ -1641,7 +1644,7 @@ def websocket_handler(ws):
     except:
         pass
 
-#Other things and error handlers
+#Other things and error handlers.
 
 @app.route("/keep-alive/")
 def keep_alive():
